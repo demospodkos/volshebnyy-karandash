@@ -22,9 +22,16 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.24.5'
           channel: 'stable'
           cache: true
+
+      - name: Create platform folders if missing
+        run: |
+          mkdir -p assets/images assets/sounds
+          if [ ! -d android ]; then
+            flutter create --project-name volshebnyy_karandash --org com.volshebnyy.karandash --platforms=android .
+          fi
 
       - name: Get dependencies
         run: flutter pub get

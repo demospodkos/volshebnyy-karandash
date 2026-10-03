@@ -1,6 +1,7 @@
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
+import '../services/sound_service.dart';
+import '../services/ai_service.dart';
+import '../widgets/particle_system.dart';
 
 class DrawingScreen extends StatefulWidget {
   final String worldId;
@@ -11,83 +12,121 @@ class DrawingScreen extends StatefulWidget {
   State<DrawingScreen> createState() => _DrawingScreenState();
 }
 
-class _DrawingScreenState extends State<DrawingScreen> {
+class _DrawingScreenState extends State<DrawingScreen>
+    with TickerProviderStateMixin {
   final List<_Stroke> _strokes = [];
   _Stroke? _currentStroke;
   Color _currentColor = const Color(0xFFFF6B6B);
-  double _strokeWidth = 8.0;
+  final double _strokeWidth = 9.0;
 
-  // Simple color → note mapping (xylophone style)
-  final Map<Color, double> _colorFrequencies = {
-    const Color(0xFFFF6B6B): 523.25, // C5 Red
-    const Color(0xFFFFD93D): 587.33, // D5 Yellow
-    const Color(0xFF6BCB77): 659.25, // E5 Green
-    const Color(0xFF4D96FF): 698.46, // F5 Blue
-    const Color(0xFF9B59B6): 783.99, // G5 Purple
-    const Color(0xFFFF8C42): 880.00, // A5 Orange
-  };
+  final SoundService _sound = SoundService();
+  final AiService _ai = AiService();
+  final ParticleSystem _particles = ParticleSystem();
 
-  final List<Color> _palette = [
-    const Color(0xFFFF6B6B),
-    const Color(0xFFFFD93D),
-    const Color(0xFF6BCB77),
-    const Color(0xFF4D96FF),
-    const Color(0xFF9B59B6),
-    const Color(0xFFFF8C42),
+  late AnimationController _particleTicker;
+  bool _isTransforming = false;
+  String? _magicMessage;
+
+  final List<Color> _palette = const [
+    Color(0xFFFF6B6B),
+    Color(0xFFFFD93D),
+    Color(0xFF6BCB77),
+    Color(0xFF4D96FF),
+    Color(0xFF9B59B6),
+    Color(0xFFFF8C42),
   ];
 
-  final AudioPlayer _player = AudioPlayer();
+  @override
+  void initState() {
+    super.initState();
+    _sound.init();
+    _ai.init();
+
+    _particleTicker = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..addListener(() {
+        _particles.update(1 / 60);
+        if (_particles.particles.isNotEmpty) setState(() {});
+      });
+    _particleTicker.repeat();
+  }
 
   @override
   void dispose() {
-    _player.dispose();
+    _particleTicker.dispose();
     super.dispose();
   }
 
   void _onPanStart(DragStartDetails details) {
+    if (_isTransforming) return;
+    final pos = details.localPosition;
     setState(() {
       _currentStroke = _Stroke(
         color: _currentColor,
         width: _strokeWidth,
-        points: [details.localPosition],
+        points: [pos],
       );
       _strokes.add(_currentStroke!);
     });
-    _playNoteForColor(_currentColor);
+    _sound.playColorNote(_currentColor);
+    _particles.emit(origin: pos, color: _currentColor, count: 6, speed: 50);
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
-    if (_currentStroke == null) return;
+    if (_currentStroke == null || _isTransforming) return;
+    final pos = details.localPosition;
     setState(() {
-      _currentStroke!.points.add(details.localPosition);
+      _currentStroke!.points.add(pos);
     });
+    if (_currentStroke!.points.length % 4 == 0) {
+      _particles.emit(origin: pos, color: _currentColor, count: 2, speed: 30);
+    }
   }
 
   void _onPanEnd(DragEndDetails details) {
     _currentStroke = null;
   }
 
-  Future<void> _playNoteForColor(Color color) async {
-    // Placeholder: real implementation will use generated sine or sample
-    // For now we just trigger a short sound (will be replaced with proper audio engine)
-    try {
-      // In real version we use a proper synth or preloaded samples
-      // await _player.play(AssetSource('sounds/note_${color.value}.wav'));
-    } catch (_) {}
-  }
-
   void _clear() {
     setState(() {
       _strokes.clear();
+      _magicMessage = null;
     });
+    _particles.clear();
   }
 
   void _undo() {
-    if (_strokes.isNotEmpty) {
-      setState(() {
-        _strokes.removeLast();
-      });
-    }
+    if (_strokes.isEmpty) return;
+    setState(() => _strokes.removeLast());
+  }
+
+  Future<void> _runMagic() async {
+    if (_isTransforming || _strokes.isEmpty) return;
+
+    setState(() {
+      _isTransforming = true;
+      _magicMessage = null;
+    });
+
+    final size = MediaQuery.of(context).size;
+    final center = Offset(size.width / 2, size.height * 0.38);
+    _particles.emitMagicBurst(center);
+    await _sound.playMagicSound();
+
+    final result = await _ai.transformScribbles(
+      strokes: _strokes.map((s) => s.points).toList(),
+      worldId: widget.worldId,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isTransforming = false;
+      _magicMessage = result.message;
+    });
+
+    await _sound.playSuccess();
   }
 
   @override
@@ -97,76 +136,114 @@ class _DrawingScreenState extends State<DrawingScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Top bar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  const Spacer(),
-                  Text(
-                    _worldTitle(widget.worldId),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
+                  Expanded(
+                    child: Text(
+                      _worldTitle(widget.worldId),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                  const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.auto_fix_high),
-                    tooltip: 'Магия AI',
-                    onPressed: () {
-                      // TODO: trigger AI transformation
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('AI-магия скоро будет готова ✨')),
-                      );
-                    },
+                    icon: _isTransforming
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                          )
+                        : const Icon(Icons.auto_awesome_rounded, size: 24),
+                    color: const Color(0xFFFF6B6B),
+                    onPressed: _runMagic,
                   ),
                 ],
               ),
             ),
-
-            // Canvas
             Expanded(
               child: Container(
-                margin: const EdgeInsets.all(12),
+                margin: const EdgeInsets.fromLTRB(12, 6, 12, 8),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(26),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
+                      color: Colors.black.withOpacity(0.07),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
                     ),
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: GestureDetector(
-                    onPanStart: _onPanStart,
-                    onPanUpdate: _onPanUpdate,
-                    onPanEnd: _onPanEnd,
-                    child: CustomPaint(
-                      painter: _DrawingPainter(_strokes),
-                      size: Size.infinite,
-                    ),
+                  borderRadius: BorderRadius.circular(26),
+                  child: Stack(
+                    children: [
+                      GestureDetector(
+                        onPanStart: _onPanStart,
+                        onPanUpdate: _onPanUpdate,
+                        onPanEnd: _onPanEnd,
+                        child: CustomPaint(
+                          painter: _DrawingPainter(_strokes),
+                          size: Size.infinite,
+                        ),
+                      ),
+                      IgnorePointer(
+                        child: CustomPaint(
+                          painter: ParticlePainter(_particles.particles),
+                          size: Size.infinite,
+                        ),
+                      ),
+                      if (_magicMessage != null)
+                        Positioned(
+                          left: 20,
+                          right: 20,
+                          bottom: 24,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF6B6B),
+                              borderRadius: BorderRadius.circular(18),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFFF6B6B).withOpacity(0.4),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              _magicMessage!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
             ),
-
-            // Color palette + tools
             Container(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
               child: Column(
                 children: [
-                  // Colors
                   SizedBox(
-                    height: 56,
+                    height: 52,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: _palette.length,
@@ -178,8 +255,8 @@ class _DrawingScreenState extends State<DrawingScreen> {
                           onTap: () => setState(() => _currentColor = color),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            width: 48,
-                            height: 48,
+                            width: 46,
+                            height: 46,
                             decoration: BoxDecoration(
                               color: color,
                               shape: BoxShape.circle,
@@ -190,9 +267,9 @@ class _DrawingScreenState extends State<DrawingScreen> {
                               boxShadow: selected
                                   ? [
                                       BoxShadow(
-                                        color: color.withOpacity(0.5),
-                                        blurRadius: 10,
-                                        spreadRadius: 2,
+                                        color: color.withOpacity(0.55),
+                                        blurRadius: 12,
+                                        spreadRadius: 1,
                                       )
                                     ]
                                   : null,
@@ -202,31 +279,17 @@ class _DrawingScreenState extends State<DrawingScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  // Tools
+                  const SizedBox(height: 14),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _ToolButton(
-                        icon: Icons.undo_rounded,
-                        label: 'Отменить',
-                        onTap: _undo,
-                      ),
-                      _ToolButton(
-                        icon: Icons.delete_outline_rounded,
-                        label: 'Очистить',
-                        onTap: _clear,
-                      ),
+                      _ToolButton(icon: Icons.undo_rounded, label: 'Отмена', onTap: _undo),
+                      _ToolButton(icon: Icons.delete_outline_rounded, label: 'Очистить', onTap: _clear),
                       _ToolButton(
                         icon: Icons.auto_awesome,
                         label: 'Магия',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('AI превратит каракули в рисунок ✨'),
-                            ),
-                          );
-                        },
+                        color: const Color(0xFFFF6B6B),
+                        onTap: _runMagic,
                       ),
                     ],
                   ),
@@ -241,16 +304,11 @@ class _DrawingScreenState extends State<DrawingScreen> {
 
   String _worldTitle(String id) {
     switch (id) {
-      case 'butterfly':
-        return 'Сад бабочек';
-      case 'ocean':
-        return 'Океан';
-      case 'forest':
-        return 'Лес';
-      case 'sky':
-        return 'Небо';
-      default:
-        return 'Свободное рисование';
+      case 'butterfly': return 'Сад бабочек 🦋';
+      case 'ocean': return 'Океан 🌊';
+      case 'forest': return 'Лес 🌲';
+      case 'sky': return 'Небо ☁️';
+      default: return 'Свободное рисование';
     }
   }
 }
@@ -259,24 +317,17 @@ class _Stroke {
   final Color color;
   final double width;
   final List<Offset> points;
-
-  _Stroke({
-    required this.color,
-    required this.width,
-    required this.points,
-  });
+  _Stroke({required this.color, required this.width, required this.points});
 }
 
 class _DrawingPainter extends CustomPainter {
   final List<_Stroke> strokes;
-
   _DrawingPainter(this.strokes);
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final stroke in strokes) {
-      if (stroke.points.length < 2) continue;
-
+      if (stroke.points.isEmpty) continue;
       final paint = Paint()
         ..color = stroke.color
         ..strokeWidth = stroke.width
@@ -284,8 +335,11 @@ class _DrawingPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round
         ..style = PaintingStyle.stroke;
 
-      final path = Path();
-      path.moveTo(stroke.points.first.dx, stroke.points.first.dy);
+      if (stroke.points.length == 1) {
+        canvas.drawCircle(stroke.points.first, stroke.width / 2, paint);
+        continue;
+      }
+      final path = Path()..moveTo(stroke.points.first.dx, stroke.points.first.dy);
       for (int i = 1; i < stroke.points.length; i++) {
         path.lineTo(stroke.points[i].dx, stroke.points[i].dy);
       }
@@ -301,40 +355,40 @@ class _ToolButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final Color? color;
 
   const _ToolButton({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
+    final c = color ?? const Color(0xFF2D2D2D);
     return GestureDetector(
       onTap: onTap,
       child: Column(
         children: [
           Container(
-            width: 56,
-            height: 56,
+            width: 54,
+            height: 54,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.06),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
-            child: Icon(icon, size: 26, color: const Color(0xFF2D2D2D)),
+            child: Icon(icon, size: 24, color: c),
           ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-          ),
+          const SizedBox(height: 5),
+          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[700])),
         ],
       ),
     );

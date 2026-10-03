@@ -1,68 +1,78 @@
-import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
-/// Simple real-time sound feedback for drawing.
-/// Maps color → musical note (xylophone style).
+/// Real-time sound feedback for drawing.
+/// Each color maps to a xylophone-style note.
 class SoundService {
   static final SoundService _instance = SoundService._();
   factory SoundService() => _instance;
   SoundService._();
 
-  final AudioPlayer _player = AudioPlayer();
+  final AudioPlayer _notePlayer = AudioPlayer();
+  final AudioPlayer _magicPlayer = AudioPlayer();
   bool _ready = false;
 
-  // Approximate frequencies for a bright xylophone feel (C major)
-  static const Map<int, double> _noteFreq = {
-    0xFFFF6B6B: 523.25, // C5 Red
-    0xFFFFD93D: 587.33, // D5 Yellow
-    0xFF6BCB77: 659.25, // E5 Green
-    0xFF4D96FF: 698.46, // F5 Blue
-    0xFF9B59B6: 783.99, // G5 Purple
-    0xFFFF8C42: 880.00, // A5 Orange
+  // Color value → note name (for sample lookup)
+  static const Map<int, String> _colorToNote = {
+    0xFFFF6B6B: 'c5', // Red
+    0xFFFFD93D: 'd5', // Yellow
+    0xFF6BCB77: 'e5', // Green
+    0xFF4D96FF: 'f5', // Blue
+    0xFF9B59B6: 'g5', // Purple
+    0xFFFF8C42: 'a5', // Orange
   };
 
   Future<void> init() async {
     try {
-      await _player.setReleaseMode(ReleaseMode.stop);
-      await _player.setVolume(0.7);
+      await _notePlayer.setReleaseMode(ReleaseMode.stop);
+      await _notePlayer.setVolume(0.75);
+      await _magicPlayer.setReleaseMode(ReleaseMode.stop);
+      await _magicPlayer.setVolume(0.85);
       _ready = true;
+      debugPrint('SoundService ready');
     } catch (e) {
       debugPrint('SoundService init error: $e');
     }
   }
 
-  /// Play a short note for the given color.
-  /// In production this will use pre-rendered samples or a synth.
+  /// Play a short xylophone-style note for the given color.
   Future<void> playColorNote(Color color, {double velocity = 1.0}) async {
     if (!_ready) return;
 
-    final freq = _noteFreq[color.value] ?? 523.25;
+    final note = _colorToNote[color.value] ?? 'c5';
+    final vol = (0.4 + velocity.clamp(0.0, 1.0) * 0.5).clamp(0.0, 1.0);
 
-    // Temporary: we trigger a short system-like feedback.
-    // Real implementation will load .wav samples from assets/sounds/
-    // or use a pure Dart synth / flutter_soloud / just_audio + generated tones.
     try {
-      // Placeholder for real sample playback
-      // await _player.play(AssetSource('sounds/xylo_${freq.round()}.wav'));
-      debugPrint('♪ Playing note ${freq.toStringAsFixed(1)} Hz for color ${color.value.toRadixString(16)}');
+      await _notePlayer.setVolume(vol);
+      // Tries to play sample. If file missing, fails silently.
+      await _notePlayer.play(AssetSource('sounds/xylo_$note.wav'));
     } catch (e) {
-      debugPrint('playColorNote error: $e');
+      // Sample not present yet — expected during development
+      debugPrint('♪ $note (sample missing)');
     }
   }
 
+  /// Magical transformation sound (AI complete).
   Future<void> playMagicSound() async {
-    // Special sound for AI transformation
-    debugPrint('✨ Magic transformation sound');
+    if (!_ready) return;
+    try {
+      await _magicPlayer.play(AssetSource('sounds/magic_sparkle.wav'));
+    } catch (e) {
+      debugPrint('✨ Magic sound (sample missing)');
+    }
+  }
+
+  /// Soft success chime.
+  Future<void> playSuccess() async {
+    if (!_ready) return;
+    try {
+      await _magicPlayer.play(AssetSource('sounds/success.wav'));
+    } catch (_) {}
   }
 
   Future<void> dispose() async {
-    await _player.dispose();
+    await _notePlayer.dispose();
+    await _magicPlayer.dispose();
   }
-}
-
-// Temporary helper so we can import Color without circular deps
-class Color {
-  final int value;
-  const Color(this.value);
 }

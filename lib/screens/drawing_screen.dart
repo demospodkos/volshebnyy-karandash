@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/sound_service.dart';
 import '../services/ai_service.dart';
 import '../widgets/particle_system.dart';
+import '../widgets/magic_overlay.dart';
 
 class DrawingScreen extends StatefulWidget {
   final String worldId;
@@ -25,7 +26,6 @@ class _DrawingScreenState extends State<DrawingScreen>
 
   late AnimationController _particleTicker;
   bool _isTransforming = false;
-  String? _magicMessage;
 
   final List<Color> _palette = const [
     Color(0xFFFF6B6B),
@@ -89,10 +89,7 @@ class _DrawingScreenState extends State<DrawingScreen>
   }
 
   void _clear() {
-    setState(() {
-      _strokes.clear();
-      _magicMessage = null;
-    });
+    setState(() => _strokes.clear());
     _particles.clear();
   }
 
@@ -104,10 +101,7 @@ class _DrawingScreenState extends State<DrawingScreen>
   Future<void> _runMagic() async {
     if (_isTransforming || _strokes.isEmpty) return;
 
-    setState(() {
-      _isTransforming = true;
-      _magicMessage = null;
-    });
+    setState(() => _isTransforming = true);
 
     final size = MediaQuery.of(context).size;
     final center = Offset(size.width / 2, size.height * 0.38);
@@ -121,12 +115,23 @@ class _DrawingScreenState extends State<DrawingScreen>
 
     if (!mounted) return;
 
-    setState(() {
-      _isTransforming = false;
-      _magicMessage = result.message;
-    });
-
+    setState(() => _isTransforming = false);
     await _sound.playSuccess();
+
+    // Beautiful full-screen result
+    await showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'magic',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (_, __, ___) {
+        return MagicOverlay(
+          result: result,
+          onDismiss: () => Navigator.of(context).pop(),
+        );
+      },
+    );
   }
 
   @override
@@ -201,38 +206,6 @@ class _DrawingScreenState extends State<DrawingScreen>
                           size: Size.infinite,
                         ),
                       ),
-                      if (_magicMessage != null)
-                        Positioned(
-                          left: 20,
-                          right: 20,
-                          bottom: 24,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 18,
-                              vertical: 14,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFF6B6B),
-                              borderRadius: BorderRadius.circular(18),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFFFF6B6B).withOpacity(0.4),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ],
-                            ),
-                            child: Text(
-                              _magicMessage!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),

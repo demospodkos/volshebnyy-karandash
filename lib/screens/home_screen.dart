@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'drawing_screen.dart';
+import 'story_level_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -14,43 +15,103 @@ class HomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               // Title
               Text(
                 'Волшебный\nкарандаш',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 42,
+                  fontSize: 40,
                   fontWeight: FontWeight.bold,
                   height: 1.1,
-                  color: Color(0xFF2D2D2D),
+                  color: const Color(0xFF2D2D2D),
                   shadows: [
                     Shadow(
-                      color: Colors.black.withOpacity(0.1),
-                      offset: Offset(0, 2),
+                      color: Colors.black.withOpacity(0.08),
+                      offset: const Offset(0, 2),
                       blurRadius: 4,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 'Рисуй • Слушай • Создавай',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 15,
                   color: Colors.grey[600],
-                  letterSpacing: 1.2,
+                  letterSpacing: 1.1,
                 ),
               ),
-              const Spacer(),
+              const SizedBox(height: 20),
+
+              // Story level button (featured)
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const StoryLevelScreen()),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF6BCB77), Color(0xFF4CAF50)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF6BCB77).withOpacity(0.4),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('🐛', style: TextStyle(fontSize: 36)),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Помоги гусенице!',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              'Сюжетный уровень',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios_rounded,
+                          color: Colors.white, size: 18),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
               // Worlds grid
               Expanded(
-                flex: 3,
                 child: GridView.count(
                   crossAxisCount: 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 14,
+                  crossAxisSpacing: 14,
                   children: [
                     _WorldCard(
                       title: 'Сад бабочек',
@@ -79,25 +140,27 @@ class HomeScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
-              // Free draw button
+
+              const SizedBox(height: 12),
+
+              // Free draw
               ElevatedButton(
                 onPressed: () => _openDrawing(context, 'free'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFF6B6B),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  elevation: 4,
+                  elevation: 3,
                 ),
                 child: const Text(
                   'Свободное рисование ✨',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
             ],
           ),
         ),
@@ -135,24 +198,24 @@ class _WorldCard extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(22),
           boxShadow: [
             BoxShadow(
-              color: color.withOpacity(0.4),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
+              color: color.withOpacity(0.35),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
             ),
           ],
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 48)),
-            const SizedBox(height: 8),
+            Text(emoji, style: const TextStyle(fontSize: 42)),
+            const SizedBox(height: 6),
             Text(
               title,
               style: const TextStyle(
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF2D2D2D),
               ),

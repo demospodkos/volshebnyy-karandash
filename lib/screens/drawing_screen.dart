@@ -19,6 +19,8 @@ class _DrawingScreenState extends State<DrawingScreen>
   _Stroke? _currentStroke;
   Color _currentColor = const Color(0xFFFF6B6B);
   final double _strokeWidth = 9.0;
+  Offset? _lastPoint;
+  DateTime? _lastTime;
 
   final SoundService _sound = SoundService();
   final AiService _ai = AiService();
@@ -26,6 +28,7 @@ class _DrawingScreenState extends State<DrawingScreen>
 
   late AnimationController _particleTicker;
   bool _isTransforming = false;
+  Instrument _instrument = Instrument.xylophone;
 
   final List<Color> _palette = const [
     Color(0xFFFF6B6B),
@@ -41,6 +44,7 @@ class _DrawingScreenState extends State<DrawingScreen>
     super.initState();
     _sound.init();
     _ai.init();
+    _sound.instrument = _instrument;
 
     _particleTicker = AnimationController(
       vsync: this,
@@ -58,9 +62,20 @@ class _DrawingScreenState extends State<DrawingScreen>
     super.dispose();
   }
 
+  void _setInstrument(Instrument inst) {
+    setState(() {
+      _instrument = inst;
+      _sound.instrument = inst;
+    });
+    // Preview the instrument
+    _sound.playColorNote(_currentColor, velocity: 0.7, speed: 0.5);
+  }
+
   void _onPanStart(DragStartDetails details) {
     if (_isTransforming) return;
     final pos = details.localPosition;
+    _lastPoint = pos;
+    _lastTime = DateTime.now();
     setState(() {
       _currentStroke = _Stroke(
         color: _currentColor,
@@ -69,16 +84,32 @@ class _DrawingScreenState extends State<DrawingScreen>
       );
       _strokes.add(_currentStroke!);
     });
-    _sound.playColorNote(_currentColor);
+    _sound.playColorNote(_currentColor, speed: 0.4);
     _particles.emit(origin: pos, color: _currentColor, count: 6, speed: 50);
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
     if (_currentStroke == null || _isTransforming) return;
     final pos = details.localPosition;
+    final now = DateTime.now();
+
+    double speed = 0.5;
+    if (_lastPoint != null && _lastTime != null) {
+      final dt = now.difference(_lastTime!).inMilliseconds.clamp(1, 200) / 1000.0;
+      final dist = (pos - _lastPoint!).distance;
+      speed = (dist / dt / 800).clamp(0.0, 1.0); // normalize
+    }
+    _lastPoint = pos;
+    _lastTime = now;
+
     setState(() {
       _currentStroke!.points.add(pos);
     });
+
+    // Periodic notes while drawing (especially nice for theremin/otamatone)
+    if (_currentStroke!.points.length % 6 == 0) {
+      _sound.playColorNote(_currentColor, velocity: 0.5 + speed * 0.4, speed: speed);
+    }
     if (_currentStroke!.points.length % 4 == 0) {
       _particles.emit(origin: pos, color: _currentColor, count: 2, speed: 30);
     }
@@ -86,6 +117,8 @@ class _DrawingScreenState extends State<DrawingScreen>
 
   void _onPanEnd(DragEndDetails details) {
     _currentStroke = null;
+    _lastPoint = null;
+    _lastTime = null;
   }
 
   void _clear() {
@@ -118,7 +151,6 @@ class _DrawingScreenState extends State<DrawingScreen>
     setState(() => _isTransforming = false);
     await _sound.playSuccess();
 
-    // Beautiful full-screen result
     await showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -173,9 +205,39 @@ class _DrawingScreenState extends State<DrawingScreen>
                 ],
               ),
             ),
+
+            // Instrument selector
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  _InstrumentChip(
+                    label: 'Ксилофон',
+                    emoji: '🎹',
+                    selected: _instrument == Instrument.xylophone,
+                    onTap: () => _setInstrument(Instrument.xylophone),
+                  ),
+                  const SizedBox(width: 8),
+                  _InstrumentChip(
+                    label: 'Отаматон',
+                    emoji: '🎵',
+                    selected: _instrument == Instrument.otamatone,
+                    onTap: () => _setInstrument(Instrument.otamatone),
+                  ),
+                  const SizedBox(width: 8),
+                  _InstrumentChip(
+                    label: 'Терменвокс',
+                    emoji: '🌀',
+                    selected: _instrument == Instrument.theremin,
+                    onTap: () => _setInstrument(Instrument.theremin),
+                  ),
+                ],
+              ),
+            ),
+
             Expanded(
               child: Container(
-                margin: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(26),
@@ -212,11 +274,11 @@ class _DrawingScreenState extends State<DrawingScreen>
               ),
             ),
             Container(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
               child: Column(
                 children: [
                   SizedBox(
-                    height: 52,
+                    height: 48,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: _palette.length,
@@ -228,8 +290,8 @@ class _DrawingScreenState extends State<DrawingScreen>
                           onTap: () => setState(() => _currentColor = color),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            width: 46,
-                            height: 46,
+                            width: 44,
+                            height: 44,
                             decoration: BoxDecoration(
                               color: color,
                               shape: BoxShape.circle,
@@ -252,7 +314,7 @@ class _DrawingScreenState extends State<DrawingScreen>
                       },
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -283,6 +345,63 @@ class _DrawingScreenState extends State<DrawingScreen>
       case 'sky': return 'Небо ☁️';
       default: return 'Свободное рисование';
     }
+  }
+}
+
+class _InstrumentChip extends StatelessWidget {
+  final String label;
+  final String emoji;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _InstrumentChip({
+    required this.label,
+    required this.emoji,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFF6B6B) : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? const Color(0xFFFF6B6B) : Colors.grey.shade300,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFFFF6B6B).withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    )
+                  ]
+                : null,
+          ),
+          child: Column(
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 16)),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? Colors.white : Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -345,8 +464,8 @@ class _ToolButton extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 54,
-            height: 54,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
@@ -360,7 +479,7 @@ class _ToolButton extends StatelessWidget {
             ),
             child: Icon(icon, size: 24, color: c),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 4),
           Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[700])),
         ],
       ),

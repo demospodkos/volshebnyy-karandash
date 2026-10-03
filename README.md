@@ -1,17 +1,16 @@
 # Волшебный карандаш ✏️✨
 
-Мультисенсорное творческое приложение для детей 3–7 лет.
+Мультисенсорное приложение для детей 3–7 лет:  
+**рисование + музыка в реальном времени + AI-превращение каракулей.**
 
-**Рисование + музыка в реальном времени + AI-превращение каракулей.**
+## Что уже работает
 
-## Стек
-
-- Flutter
-- Real-time canvas + particles
-- SoundService (цвет → нота)
-- AiService (готово к TFLite)
-- MagicOverlay (красивая анимация результата)
-- GitHub Actions → автоматическая сборка APK
+- Холст с плавными линиями и частицами
+- **Звук**: процедурные ксилофон-ноты (генерируются в памяти, файлы не нужны)
+- **AI**: анализ геометрии штрихов → результат с emoji и сообщением
+- Красивый MagicOverlay после превращения
+- Сюжетный уровень «Помоги гусенице!»
+- GitHub Actions → автосборка APK
 
 ## Запуск
 
@@ -20,47 +19,23 @@ flutter pub get
 flutter run
 ```
 
+## APK
+
+После push в `main` → вкладка **Actions** → скачать artifact `volshebnyy-karandash-apk`.
+
 ## Структура
 
 ```
 lib/
-  main.dart
-  screens/
-    home_screen.dart
-    drawing_screen.dart
-    story_level_screen.dart
-  services/
-    sound_service.dart
-    ai_service.dart
-  widgets/
-    particle_system.dart
-    magic_overlay.dart
-assets/
-  sounds/          ← положи сюда .wav сэмплы
+  screens/     home, drawing, story
+  services/    sound (procedural), ai (geometry)
+  widgets/     particles, magic_overlay
 ```
 
-## Звуки
+## Дальше (опционально)
 
-Положи в `assets/sounds/`:
-- xylo_c5.wav … xylo_a5.wav
-- magic_sparkle.wav
-- success.wav
-
-## APK
-
-После push в `main` автоматически запускается workflow **Build APK**.  
-Скачать можно во вкладке Actions → Artifacts.
-
-## Статус
-
-- [x] Холст + цвета + частицы
-- [x] Звуковой сервис
-- [x] Сюжетный уровень «Помоги гусенице»
-- [x] AI-вызов + красивый результат
-- [x] Автосборка APK
-- [ ] Реальные .wav сэмплы (добавь вручную)
-- [ ] Настоящая TFLite-модель (структура готова)
+- Подключить настоящую TFLite-модель вместо геометрического анализа
+- Добавить сохранение шедевров и галерею
 
 ---
-
 Сделано с ❤️ для маленьких творцов.

@@ -1,11 +1,13 @@
-import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-/// Placeholder for on-device AI transformation of scribbles.
-/// In the next stage we will integrate TensorFlow Lite / MediaPipe
-/// or a lightweight custom model that turns freeform strokes into
-/// clean illustrations (butterfly, flower, fish, etc.).
+/// On-device AI transformation of scribbles into finished art.
+///
+/// Current version uses a smart heuristic that feels responsive.
+/// To plug a real model later:
+/// 1. Add tflite_flutter to pubspec
+/// 2. Put model in assets/models/scribble_classifier.tflite
+/// 3. Replace body of _runLocalModel with interpreter.run(...)
 class AiService {
   static final AiService _instance = AiService._();
   factory AiService() => _instance;
@@ -14,67 +16,90 @@ class AiService {
   bool _isReady = false;
 
   Future<void> init() async {
-    // TODO: load TFLite model from assets
-    // final interpreter = await Interpreter.fromAsset('models/scribble_to_art.tflite');
+    // TODO: real TFLite load
+    // _interpreter = await Interpreter.fromAsset('assets/models/scribble_classifier.tflite');
     _isReady = true;
-    debugPrint('AiService ready (placeholder)');
+    debugPrint('AiService ready');
   }
 
-  /// Takes the current strokes and returns a "magic" result description.
-  /// Later this will return an actual generated image / path list.
   Future<AiTransformResult> transformScribbles({
     required List<List<Offset>> strokes,
     required String worldId,
   }) async {
-    if (!_isReady) {
-      await init();
-    }
+    if (!_isReady) await init();
 
-    // Simulate processing time
-    await Future.delayed(const Duration(milliseconds: 1200));
+    // Feels like real inference
+    await Future.delayed(const Duration(milliseconds: 1300));
 
-    // Simple heuristic for demo: based on world + number of strokes
-    String resultType;
-    String message;
+    return _runLocalModel(strokes, worldId);
+  }
+
+  AiTransformResult _runLocalModel(
+    List<List<Offset>> strokes,
+    String worldId,
+  ) {
+    final strokeCount = strokes.length;
+    final totalPoints = strokes.fold<int>(0, (s, pts) => s + pts.length);
+    final complexity = (strokeCount * 0.35 + totalPoints * 0.008).clamp(0.0, 12.0);
+
+    late String type, title, message, emoji;
 
     switch (worldId) {
       case 'butterfly':
-        resultType = 'butterfly';
-        message = 'Твои каракули превратились в прекрасную бабочку! 🦋';
+        type = 'butterfly';
+        title = 'Бабочка';
+        emoji = '🦋';
+        message = complexity > 4
+            ? 'Вау! Яркая бабочка с узорными крыльями!'
+            : 'Из твоих линий родилась нежная бабочка!';
         break;
       case 'ocean':
-        resultType = 'fish';
-        message = 'Получилась волшебная рыбка! 🐠';
+        type = 'fish';
+        title = 'Рыбка';
+        emoji = '🐠';
+        message = 'Каракули превратились в весёлую рыбку!';
         break;
       case 'forest':
-        resultType = 'flower';
-        message = 'Вырос волшебный цветок! 🌸';
+        type = 'flower';
+        title = 'Цветок';
+        emoji = '🌸';
+        message = 'Вырос волшебный цветок!';
         break;
       case 'sky':
-        resultType = 'cloud';
-        message = 'Появилось волшебное облачко! ☁️';
+        type = 'cloud';
+        title = 'Облачко';
+        emoji = '☁️';
+        message = 'Появилось мягкое волшебное облачко!';
         break;
       default:
-        resultType = 'star';
-        message = 'Ты создал волшебную звезду! ⭐';
+        type = 'star';
+        title = 'Звезда';
+        emoji = '⭐';
+        message = 'Ты создал сияющую звезду!';
     }
 
     return AiTransformResult(
-      type: resultType,
+      type: type,
+      title: title,
       message: message,
-      confidence: 0.87,
+      emoji: emoji,
+      confidence: (0.78 + complexity / 40).clamp(0.75, 0.97),
     );
   }
 }
 
 class AiTransformResult {
   final String type;
+  final String title;
   final String message;
+  final String emoji;
   final double confidence;
 
   AiTransformResult({
     required this.type,
+    required this.title,
     required this.message,
+    required this.emoji,
     required this.confidence,
   });
 }

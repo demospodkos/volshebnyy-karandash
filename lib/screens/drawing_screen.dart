@@ -58,6 +58,7 @@ class _DrawingScreenState extends State<DrawingScreen>
 
   @override
   void dispose() {
+    _sound.stopDrawing();
     _particleTicker.dispose();
     super.dispose();
   }
@@ -67,7 +68,6 @@ class _DrawingScreenState extends State<DrawingScreen>
       _instrument = inst;
       _sound.instrument = inst;
     });
-    // Preview the instrument
     _sound.playColorNote(_currentColor, velocity: 0.7, speed: 0.5);
   }
 
@@ -84,7 +84,8 @@ class _DrawingScreenState extends State<DrawingScreen>
       );
       _strokes.add(_currentStroke!);
     });
-    _sound.playColorNote(_currentColor, speed: 0.4);
+    // Start continuous sound for the whole stroke
+    _sound.startDrawing(_currentColor, speed: 0.4);
     _particles.emit(origin: pos, color: _currentColor, count: 6, speed: 50);
   }
 
@@ -95,9 +96,10 @@ class _DrawingScreenState extends State<DrawingScreen>
 
     double speed = 0.5;
     if (_lastPoint != null && _lastTime != null) {
-      final dt = now.difference(_lastTime!).inMilliseconds.clamp(1, 200) / 1000.0;
+      final dt =
+          now.difference(_lastTime!).inMilliseconds.clamp(1, 200) / 1000.0;
       final dist = (pos - _lastPoint!).distance;
-      speed = (dist / dt / 800).clamp(0.0, 1.0); // normalize
+      speed = (dist / dt / 800).clamp(0.0, 1.0);
     }
     _lastPoint = pos;
     _lastTime = now;
@@ -106,10 +108,9 @@ class _DrawingScreenState extends State<DrawingScreen>
       _currentStroke!.points.add(pos);
     });
 
-    // Periodic notes while drawing (especially nice for theremin/otamatone)
-    if (_currentStroke!.points.length % 6 == 0) {
-      _sound.playColorNote(_currentColor, velocity: 0.5 + speed * 0.4, speed: speed);
-    }
+    // Keep sound playing the entire time the finger moves
+    _sound.whileDrawing(_currentColor, speed: speed);
+
     if (_currentStroke!.points.length % 4 == 0) {
       _particles.emit(origin: pos, color: _currentColor, count: 2, speed: 30);
     }
@@ -119,6 +120,8 @@ class _DrawingScreenState extends State<DrawingScreen>
     _currentStroke = null;
     _lastPoint = null;
     _lastTime = null;
+    // Stop sound when finger lifts
+    _sound.stopDrawing();
   }
 
   void _clear() {
@@ -135,6 +138,7 @@ class _DrawingScreenState extends State<DrawingScreen>
     if (_isTransforming || _strokes.isEmpty) return;
 
     setState(() => _isTransforming = true);
+    await _sound.stopDrawing();
 
     final size = MediaQuery.of(context).size;
     final center = Offset(size.width / 2, size.height * 0.38);
@@ -205,8 +209,6 @@ class _DrawingScreenState extends State<DrawingScreen>
                 ],
               ),
             ),
-
-            // Instrument selector
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Row(
@@ -234,7 +236,6 @@ class _DrawingScreenState extends State<DrawingScreen>
                 ],
               ),
             ),
-
             Expanded(
               child: Container(
                 margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -296,7 +297,8 @@ class _DrawingScreenState extends State<DrawingScreen>
                               color: color,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: selected ? Colors.black87 : Colors.transparent,
+                                color:
+                                    selected ? Colors.black87 : Colors.transparent,
                                 width: 3,
                               ),
                               boxShadow: selected
@@ -318,8 +320,12 @@ class _DrawingScreenState extends State<DrawingScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _ToolButton(icon: Icons.undo_rounded, label: 'Отмена', onTap: _undo),
-                      _ToolButton(icon: Icons.delete_outline_rounded, label: 'Очистить', onTap: _clear),
+                      _ToolButton(
+                          icon: Icons.undo_rounded, label: 'Отмена', onTap: _undo),
+                      _ToolButton(
+                          icon: Icons.delete_outline_rounded,
+                          label: 'Очистить',
+                          onTap: _clear),
                       _ToolButton(
                         icon: Icons.auto_awesome,
                         label: 'Магия',
@@ -339,11 +345,16 @@ class _DrawingScreenState extends State<DrawingScreen>
 
   String _worldTitle(String id) {
     switch (id) {
-      case 'butterfly': return 'Сад бабочек 🦋';
-      case 'ocean': return 'Океан 🌊';
-      case 'forest': return 'Лес 🌲';
-      case 'sky': return 'Небо ☁️';
-      default: return 'Свободное рисование';
+      case 'butterfly':
+        return 'Сад бабочек 🦋';
+      case 'ocean':
+        return 'Океан 🌊';
+      case 'forest':
+        return 'Лес 🌲';
+      case 'sky':
+        return 'Небо ☁️';
+      default:
+        return 'Свободное рисование';
     }
   }
 }
@@ -431,7 +442,8 @@ class _DrawingPainter extends CustomPainter {
         canvas.drawCircle(stroke.points.first, stroke.width / 2, paint);
         continue;
       }
-      final path = Path()..moveTo(stroke.points.first.dx, stroke.points.first.dy);
+      final path = Path()
+        ..moveTo(stroke.points.first.dx, stroke.points.first.dy);
       for (int i = 1; i < stroke.points.length; i++) {
         path.lineTo(stroke.points[i].dx, stroke.points[i].dy);
       }

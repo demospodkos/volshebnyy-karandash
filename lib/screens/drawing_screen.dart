@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../services/sound_service.dart';
 import '../services/ai_service.dart';
@@ -6,7 +7,6 @@ import '../widgets/magic_overlay.dart';
 
 class DrawingScreen extends StatefulWidget {
   final String worldId;
-
   const DrawingScreen({super.key, required this.worldId});
 
   @override
@@ -18,9 +18,10 @@ class _DrawingScreenState extends State<DrawingScreen>
   final List<_Stroke> _strokes = [];
   _Stroke? _currentStroke;
   Color _currentColor = const Color(0xFFFF6B6B);
-  final double _strokeWidth = 9.0;
+  final double _baseWidth = 10.0;
   Offset? _lastPoint;
   DateTime? _lastTime;
+  double _traveled = 0; // distance since last sound tick
 
   final SoundService _sound = SoundService();
   final AiService _ai = AiService();
@@ -68,7 +69,7 @@ class _DrawingScreenState extends State<DrawingScreen>
       _instrument = inst;
       _sound.instrument = inst;
     });
-    _sound.playColorNote(_currentColor, velocity: 0.7, speed: 0.5);
+    _sound.playColorNote(_currentColor, velocity: 0.75, speed: 0.5);
   }
 
   void _onPanStart(DragStartDetails details) {
@@ -76,17 +77,19 @@ class _DrawingScreenState extends State<DrawingScreen>
     final pos = details.localPosition;
     _lastPoint = pos;
     _lastTime = DateTime.now();
+    _traveled = 0;
+
     setState(() {
       _currentStroke = _Stroke(
         color: _currentColor,
-        width: _strokeWidth,
+        widths: [_baseWidth],
         points: [pos],
       );
       _strokes.add(_currentStroke!);
     });
-    // Start continuous sound for the whole stroke
-    _sound.startDrawing(_currentColor, speed: 0.4);
-    _particles.emit(origin: pos, color: _currentColor, count: 6, speed: 50);
+
+    _sound.startDrawing(_currentColor, speed: 0.5);
+    _particles.emit(origin: pos, color: _currentColor, count: 10, speed: 70);
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
@@ -94,33 +97,48 @@ class _DrawingScreenState extends State<DrawingScreen>
     final pos = details.localPosition;
     final now = DateTime.now();
 
-    double speed = 0.5;
+    double speed = 0.4;
+    double dist = 0;
     if (_lastPoint != null && _lastTime != null) {
+      dist = (pos - _lastPoint!).distance;
       final dt =
           now.difference(_lastTime!).inMilliseconds.clamp(1, 200) / 1000.0;
-      final dist = (pos - _lastPoint!).distance;
-      speed = (dist / dt / 800).clamp(0.0, 1.0);
+      speed = (dist / dt / 700).clamp(0.0, 1.0);
     }
-    _lastPoint = pos;
-    _lastTime = now;
+
+    // Variable width: faster = slightly thinner
+    final w = (_baseWidth * (1.15 - speed * 0.35)).clamp(6.0, 14.0);
 
     setState(() {
       _currentStroke!.points.add(pos);
+      _currentStroke!.widths.add(w);
     });
 
-    // Keep sound playing the entire time the finger moves
-    _sound.whileDrawing(_currentColor, speed: speed);
-
-    if (_currentStroke!.points.length % 4 == 0) {
-      _particles.emit(origin: pos, color: _currentColor, count: 2, speed: 30);
+    _traveled += dist;
+    // Sound tied to distance traveled (~12 px) — stable continuous feel
+    if (_traveled >= 12) {
+      _traveled = 0;
+      _sound.whileDrawing(_currentColor, speed: speed);
     }
+
+    if (_currentStroke!.points.length % 3 == 0) {
+      _particles.emit(
+        origin: pos,
+        color: _currentColor,
+        count: 3,
+        speed: 25 + speed * 40,
+      );
+    }
+
+    _lastPoint = pos;
+    _lastTime = now;
   }
 
   void _onPanEnd(DragEndDetails details) {
     _currentStroke = null;
     _lastPoint = null;
     _lastTime = null;
-    // Stop sound when finger lifts
+    _traveled = 0;
     _sound.stopDrawing();
   }
 
@@ -136,7 +154,6 @@ class _DrawingScreenState extends State<DrawingScreen>
 
   Future<void> _runMagic() async {
     if (_isTransforming || _strokes.isEmpty) return;
-
     setState(() => _isTransforming = true);
     await _sound.stopDrawing();
 
@@ -151,7 +168,6 @@ class _DrawingScreenState extends State<DrawingScreen>
     );
 
     if (!mounted) return;
-
     setState(() => _isTransforming = false);
     await _sound.playSuccess();
 
@@ -161,28 +177,27 @@ class _DrawingScreenState extends State<DrawingScreen>
       barrierLabel: 'magic',
       barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (_, __, ___) {
-        return MagicOverlay(
-          result: result,
-          onDismiss: () => Navigator.of(context).pop(),
-        );
-      },
+      pageBuilder: (_, __, ___) => MagicOverlay(
+        result: result,
+        onDismiss: () => Navigator.of(context).pop(),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFDF7),
+      backgroundColor: const Color(0xFFFFF9F2),
       body: SafeArea(
         child: Column(
           children: [
+            // Top bar
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+              padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
                     onPressed: () => Navigator.pop(context),
                   ),
                   Expanded(
@@ -190,8 +205,9 @@ class _DrawingScreenState extends State<DrawingScreen>
                       _worldTitle(widget.worldId),
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2,
                       ),
                     ),
                   ),
@@ -209,8 +225,10 @@ class _DrawingScreenState extends State<DrawingScreen>
                 ],
               ),
             ),
+
+            // Instruments
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
               child: Row(
                 children: [
                   _InstrumentChip(
@@ -236,24 +254,39 @@ class _DrawingScreenState extends State<DrawingScreen>
                 ],
               ),
             ),
+
+            // Canvas
             Expanded(
               child: Container(
-                margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                margin: const EdgeInsets.fromLTRB(12, 2, 12, 6),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(26),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFFFFFFF), Color(0xFFFFF5EB)],
+                  ),
+                  borderRadius: BorderRadius.circular(28),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.07),
-                      blurRadius: 24,
-                      offset: const Offset(0, 10),
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 28,
+                      offset: const Offset(0, 12),
+                    ),
+                    BoxShadow(
+                      color: const Color(0xFFFF6B6B).withOpacity(0.06),
+                      blurRadius: 40,
+                      spreadRadius: -4,
                     ),
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(26),
+                  borderRadius: BorderRadius.circular(28),
                   child: Stack(
                     children: [
+                      // soft paper texture hint
+                      Positioned.fill(
+                        child: CustomPaint(painter: _PaperPainter()),
+                      ),
                       GestureDetector(
                         onPanStart: _onPanStart,
                         onPanUpdate: _onPanUpdate,
@@ -274,8 +307,10 @@ class _DrawingScreenState extends State<DrawingScreen>
                 ),
               ),
             ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
+
+            // Palette + tools
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
               child: Column(
                 children: [
                   SizedBox(
@@ -290,26 +325,26 @@ class _DrawingScreenState extends State<DrawingScreen>
                         return GestureDetector(
                           onTap: () => setState(() => _currentColor = color),
                           child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
+                            duration: const Duration(milliseconds: 180),
                             width: 44,
                             height: 44,
                             decoration: BoxDecoration(
                               color: color,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color:
-                                    selected ? Colors.black87 : Colors.transparent,
-                                width: 3,
+                                color: selected
+                                    ? Colors.black87
+                                    : Colors.white.withOpacity(0.8),
+                                width: selected ? 3 : 2,
                               ),
-                              boxShadow: selected
-                                  ? [
-                                      BoxShadow(
-                                        color: color.withOpacity(0.55),
-                                        blurRadius: 12,
-                                        spreadRadius: 1,
-                                      )
-                                    ]
-                                  : null,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: color.withOpacity(selected ? 0.55 : 0.25),
+                                  blurRadius: selected ? 14 : 6,
+                                  spreadRadius: selected ? 1 : 0,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
                             ),
                           ),
                         );
@@ -359,6 +394,8 @@ class _DrawingScreenState extends State<DrawingScreen>
   }
 }
 
+// ─── Widgets ───────────────────────────────────────────────
+
 class _InstrumentChip extends StatelessWidget {
   final String label;
   final String emoji;
@@ -389,12 +426,18 @@ class _InstrumentChip extends StatelessWidget {
             boxShadow: selected
                 ? [
                     BoxShadow(
-                      color: const Color(0xFFFF6B6B).withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
+                      color: const Color(0xFFFF6B6B).withOpacity(0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
                     )
                   ]
-                : null,
+                : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    )
+                  ],
           ),
           child: Column(
             children: [
@@ -414,45 +457,6 @@ class _InstrumentChip extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Stroke {
-  final Color color;
-  final double width;
-  final List<Offset> points;
-  _Stroke({required this.color, required this.width, required this.points});
-}
-
-class _DrawingPainter extends CustomPainter {
-  final List<_Stroke> strokes;
-  _DrawingPainter(this.strokes);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final stroke in strokes) {
-      if (stroke.points.isEmpty) continue;
-      final paint = Paint()
-        ..color = stroke.color
-        ..strokeWidth = stroke.width
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke;
-
-      if (stroke.points.length == 1) {
-        canvas.drawCircle(stroke.points.first, stroke.width / 2, paint);
-        continue;
-      }
-      final path = Path()
-        ..moveTo(stroke.points.first.dx, stroke.points.first.dy);
-      for (int i = 1; i < stroke.points.length; i++) {
-        path.lineTo(stroke.points[i].dx, stroke.points[i].dy);
-      }
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DrawingPainter oldDelegate) => true;
 }
 
 class _ToolButton extends StatelessWidget {
@@ -483,8 +487,8 @@ class _ToolButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 10,
+                  color: Colors.black.withOpacity(0.07),
+                  blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
               ],
@@ -497,4 +501,89 @@ class _ToolButton extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Drawing data ──────────────────────────────────────────
+
+class _Stroke {
+  final Color color;
+  final List<double> widths;
+  final List<Offset> points;
+  _Stroke({required this.color, required this.widths, required this.points});
+}
+
+class _DrawingPainter extends CustomPainter {
+  final List<_Stroke> strokes;
+  _DrawingPainter(this.strokes);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final stroke in strokes) {
+      if (stroke.points.isEmpty) continue;
+
+      // Soft glow under the stroke
+      final glow = Paint()
+        ..color = stroke.color.withOpacity(0.22)
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+      final paint = Paint()
+        ..color = stroke.color
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke;
+
+      if (stroke.points.length == 1) {
+        final w = stroke.widths.isNotEmpty ? stroke.widths.first : 10.0;
+        glow.strokeWidth = w + 6;
+        paint.strokeWidth = w;
+        canvas.drawCircle(stroke.points.first, w / 2, glow);
+        canvas.drawCircle(stroke.points.first, w / 2, paint);
+        continue;
+      }
+
+      // Smooth path with mid-point quadratic curves
+      final path = Path();
+      path.moveTo(stroke.points.first.dx, stroke.points.first.dy);
+      for (int i = 1; i < stroke.points.length; i++) {
+        final p0 = stroke.points[i - 1];
+        final p1 = stroke.points[i];
+        final mid = Offset((p0.dx + p1.dx) / 2, (p0.dy + p1.dy) / 2);
+        path.quadraticBezierTo(p0.dx, p0.dy, mid.dx, mid.dy);
+      }
+      path.lineTo(stroke.points.last.dx, stroke.points.last.dy);
+
+      final avgW = stroke.widths.isEmpty
+          ? 10.0
+          : stroke.widths.reduce((a, b) => a + b) / stroke.widths.length;
+
+      glow.strokeWidth = avgW + 8;
+      paint.strokeWidth = avgW;
+
+      canvas.drawPath(path, glow);
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DrawingPainter old) => true;
+}
+
+class _PaperPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    // very subtle dots for paper feel
+    final paint = Paint()..color = const Color(0x08000000);
+    const step = 28.0;
+    for (double x = 0; x < size.width; x += step) {
+      for (double y = 0; y < size.height; y += step) {
+        canvas.drawCircle(Offset(x + 4, y + 4), 0.8, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
